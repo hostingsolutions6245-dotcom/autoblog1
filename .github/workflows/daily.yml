@@ -1,1 +1,49 @@
+name: daily-posts
+
+on:
+  schedule:
+    - cron: "30 3 * * *"        # every day 03:30 UTC (09:00 IST)
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry-run (saves files only) or live (posts per sites.json)"
+        default: "dry-run"
+      site:
+        description: "site key (techybio, flowcharttech, knowgrowhealth, diycraftsnyou) or blank for all"
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Write today's posts
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          WP_TECHYBIO_USER: ${{ secrets.WP_TECHYBIO_USER }}
+          WP_TECHYBIO_PASS: ${{ secrets.WP_TECHYBIO_PASS }}
+          WP_FLOWCHARTTECH_USER: ${{ secrets.WP_FLOWCHARTTECH_USER }}
+          WP_FLOWCHARTTECH_PASS: ${{ secrets.WP_FLOWCHARTTECH_PASS }}
+          WP_KNOWGROWHEALTH_USER: ${{ secrets.WP_KNOWGROWHEALTH_USER }}
+          WP_KNOWGROWHEALTH_PASS: ${{ secrets.WP_KNOWGROWHEALTH_PASS }}
+          WP_DIYCRAFTSNYOU_USER: ${{ secrets.WP_DIYCRAFTSNYOU_USER }}
+          WP_DIYCRAFTSNYOU_PASS: ${{ secrets.WP_DIYCRAFTSNYOU_PASS }}
+        run: |
+          python autoblog.py ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'dry-run') && '--dry-run' || '' }} ${{ inputs.site && format('--site {0}', inputs.site) || '' }}
+      - name: Save used-topic log and drafts
+        if: always()
+        run: |
+          git config user.name "autoblog-bot"
+          git config user.email "autoblog-bot@users.noreply.github.com"
+          git add state out
+          git commit -m "autoblog run $(date -u +%F)" || echo "nothing to commit"
+          git push || true
 
