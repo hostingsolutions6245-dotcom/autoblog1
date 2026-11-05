@@ -63,7 +63,7 @@ def _resolve(uri):
         return uri
 
 
-def ask(system, user, max_tokens=12000, searches=0):
+def ask(system, user, max_tokens=12000, searches=0, need_json=False):
     """Call Gemini (free tier). Tries Google Search grounding first, then falls back to no-search.
     Returns (text, grounded, domains_seen_in_search)."""
     last = None
@@ -75,6 +75,17 @@ def ask(system, user, max_tokens=12000, searches=0):
                         system_instruction=system, max_output_tokens=max_tokens, temperature=0.6,
                         tools=[types.Tool(google_search=types.GoogleSearch())] if grounded else None)
                     r = client.models.generate_content(model=model, contents=user, config=cfg)
+                    text = r.text or ""
+                    fr = r.candidates[0].finish_reason if r.candidates else None
+                    print(f"  [gemini {model} grounded={grounded}] finish={fr} chars={len(text)}")
+                    if need_json:
+                        try:
+                            extract_json(text)
+                        except Exception:
+                            last = RuntimeError(f"{model} grounded={grounded}: no usable JSON "
+                                                f"(finish={fr}, chars={len(text)}): {text[:200]!r}")
+                            print("  ->", last)
+                            break  # try next option (no-search / next model)
                     domains = set()
                     if grounded:
                         gm = getattr(r.candidates[0], "grounding_metadata", None)
@@ -84,7 +95,7 @@ def ask(system, user, max_tokens=12000, searches=0):
                                     domains.add(ch.web.title.lower().replace("www.", ""))
                                 if ch.web.uri:
                                     domains.add(host_of(_resolve(ch.web.uri)))
-                    return r.text or "", bool(grounded and domains), domains
+                    return text, bool(grounded and domains), domains
                 except Exception as e:  # rate limit, quota, unsupported tool on this model...
                     last = e
                     if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
@@ -95,9 +106,16 @@ def ask(system, user, max_tokens=12000, searches=0):
 
 
 def extract_json(text):
-    m = re.search(r"<json>(.*?)</json>", text, re.S)
-    raw = m.group(1) if m else text[text.find("{"): text.rfind("}") + 1]
-    return json.loads(raw)
+    t = (text or "").strip()
+    m = re.search(r"<json>(.*?)(</json>|$)", t, re.S)
+    if m:
+        t = m.group(1).strip()
+    t = re.sub(r"^```(?:json)?|```$", "", t, flags=re.M).strip()
+    i = t.find("{")
+    if i < 0:
+        raise ValueError("no JSON object found in model reply")
+    obj, _ = json.JSONDecoder().raw_decode(t[i:])
+    return obj
 
 
 # --------------------------------------------------------------------------- WordPress
@@ -157,7 +175,7 @@ Pick ONE question that:
 
 Reply ONLY with:
 <json>{{"question": "...", "primary_keyword": "...", "search_intent": "...", "template": "how-to|comparison|faq-knowledge|news-analysis|product-review|listicle"}}</json>"""
-    text, _, _ = ask(system, user, max_tokens=3000)
+    text, _, _ = ask(system, user, max_tokens=4000, need_json=True)
     return extract_json(text)
 
 
@@ -201,7 +219,7 @@ tags (3-5), faq (same Q&A as in the HTML, as list of objects with q and a), sour
 
 Reply ONLY with:
 <json>{{"title":"","slug":"","meta_description":"","excerpt":"","tags":[],"content_html":"","faq":[{{"q":"","a":""}}],"sources":[{{"name":"","url":""}}]}}</json>"""
-    text, grounded, domains = ask(system, user, max_tokens=14000)
+    text, grounded, domains = ask(system, user, max_tokens=24000, need_json=True)
     art = extract_json(text)
     art["_grounded"], art["_domains"] = grounded, domains
     return art
