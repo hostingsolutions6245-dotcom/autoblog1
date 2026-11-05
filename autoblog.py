@@ -34,7 +34,7 @@ from bs4 import BeautifulSoup
 ROOT = Path(__file__).parent
 STATE_DIR = ROOT / "state"
 OUT_DIR = ROOT / "out"
-MODELS = [m.strip() for m in os.getenv("GEMINI_MODELS", "gemini-2.5-flash,gemini-2.5-flash-lite").split(",")]
+MODELS = [m.strip() for m in os.getenv("GEMINI_MODELS", "gemini-3.5-flash,gemini-3.5-flash-lite").split(",")]
 SITE_DELAY = int(os.getenv("SITE_DELAY", "45"))  # seconds between sites (free-tier RPM)
 UA = {"User-Agent": "Mozilla/5.0 (compatible; AutoBlogBot/1.0)"}
 BANNED = ["in today's digital landscape", "it's important to note", "dive into", "game-changer",
