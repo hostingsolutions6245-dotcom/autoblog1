@@ -1,0 +1,81 @@
+{
+  "sites": [
+    {
+      "key": "techybio",
+      "url": "https://techybio.com",
+      "wp_user_env": "WP_TECHYBIO_USER",
+      "wp_pass_env": "WP_TECHYBIO_PASS",
+      "status": "draft",
+      "ymyl": false,
+      "author_name": "Techy Bio",
+      "audience": "Business owners, marketers and tech-curious readers who want plain-English answers.",
+      "niches": {
+        "cybersecurity": "Cybersecurity",
+        "marketing": "Marketing",
+        "fintech": "Fintech",
+        "technology": "Technology"
+      },
+      "avoid": "Beginner and career-oriented cybersecurity, practical marketing and fintech. Leave AI/SEO/SaaS topics to flowcharttech.com.",
+      "min_words": 1100
+    },
+    {
+      "key": "flowcharttech",
+      "url": "https://flowcharttech.com",
+      "wp_user_env": "WP_FLOWCHARTTECH_USER",
+      "wp_pass_env": "WP_FLOWCHARTTECH_PASS",
+      "status": "draft",
+      "ymyl": false,
+      "author_name": "Jesse Turner",
+      "audience": "Marketers, founders and SaaS teams who want practical AI, SEO/AEO and SaaS guidance.",
+      "niches": {
+        "ai": "Ai",
+        "seo and aeo": "Seo",
+        "saas": "Saas",
+        "tech tools": "Tech",
+        "cybersecurity for businesses": "Cybersecurity"
+      },
+      "avoid": "AI, SEO/AEO, SaaS and tools. Leave beginner cybersecurity careers, fintech and general marketing to techybio.com.",
+      "min_words": 1100
+    },
+    {
+      "key": "knowgrowhealth",
+      "url": "https://knowgrowhealth.com",
+      "wp_user_env": "WP_KNOWGROWHEALTH_USER",
+      "wp_pass_env": "WP_KNOWGROWHEALTH_PASS",
+      "status": "draft",
+      "ymyl": true,
+      "author_name": "Noah Diaz",
+      "audience": "Adults looking for evidence-based, plain-language health and wellness answers.",
+      "niches": {
+        "mental health": "Mental Health",
+        "health and wellness": "Health & Wellness",
+        "fitness, weight loss and metabolism": "Weight Loss & Metabolism",
+        "sleep": "Sleep & Mental Wellness",
+        "gut and digestive health": "Gut & Digestive Health"
+      },
+      "avoid": "Do not repeat GLP-1 basics, gut microbiome, gut-brain, CBT vs DBT, probiotics vs prebiotics, screen time or sleep optimization overviews.",
+      "min_words": 1100,
+      "trusted_domains": ["nih.gov", "cdc.gov", "who.int", "mayoclinic.org", "clevelandclinic.org", "health.harvard.edu", "nature.com", "thelancet.com", "jamanetwork.com", "bmj.com", "apa.org", "nami.org", "sleepfoundation.org", "hopkinsmedicine.org", "medlineplus.gov", "fda.gov"]
+    },
+    {
+      "key": "diycraftsnyou",
+      "url": "https://diycraftsnyou.com",
+      "wp_user_env": "WP_DIYCRAFTSNYOU_USER",
+      "wp_pass_env": "WP_DIYCRAFTSNYOU_PASS",
+      "status": "draft",
+      "ymyl": false,
+      "author_name": "Diy Crafts N You",
+      "audience": "Homeowners, first-time buyers and movers who want realistic costs and practical steps.",
+      "niches": {
+        "home improvement": "Home Improvement",
+        "kitchen and flooring": "Flooring and kitchen",
+        "real estate": "Real Estate",
+        "packing and moving": "Packing & Moving",
+        "decor and design": "Decor & Design",
+        "landscaping and gardening": "Landscaping & Gardening"
+      },
+      "avoid": "Home, real estate, moving and garden topics only. Never fitness, gaming or travel.",
+      "min_words": 1100
+    }
+  ]
+}
