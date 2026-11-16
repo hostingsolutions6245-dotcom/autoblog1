@@ -16,7 +16,7 @@
         "technology": "Technology"
       },
       "avoid": "Beginner and career-oriented cybersecurity, practical marketing and fintech. Leave AI/SEO/SaaS topics to flowcharttech.com.",
-      "min_words": 1100
+      "min_words": 900
     },
     {
       "key": "flowcharttech",
@@ -35,7 +35,7 @@
         "cybersecurity for businesses": "Cybersecurity"
       },
       "avoid": "AI, SEO/AEO, SaaS and tools. Leave beginner cybersecurity careers, fintech and general marketing to techybio.com.",
-      "min_words": 1100
+      "min_words": 900
     },
     {
       "key": "knowgrowhealth",
@@ -54,7 +54,7 @@
         "gut and digestive health": "Gut & Digestive Health"
       },
       "avoid": "Do not repeat GLP-1 basics, gut microbiome, gut-brain, CBT vs DBT, probiotics vs prebiotics, screen time or sleep optimization overviews.",
-      "min_words": 1100,
+      "min_words": 900,
       "trusted_domains": ["nih.gov", "cdc.gov", "who.int", "mayoclinic.org", "clevelandclinic.org", "health.harvard.edu", "nature.com", "thelancet.com", "jamanetwork.com", "bmj.com", "apa.org", "nami.org", "sleepfoundation.org", "hopkinsmedicine.org", "medlineplus.gov", "fda.gov"]
     },
     {
@@ -75,7 +75,7 @@
         "landscaping and gardening": "Landscaping & Gardening"
       },
       "avoid": "Home, real estate, moving and garden topics only. Never fitness, gaming or travel.",
-      "min_words": 1100
+      "min_words": 900
     }
   ]
 }

@@ -40,6 +40,10 @@ UA = {"User-Agent": "Mozilla/5.0 (compatible; AutoBlogBot/1.0)"}
 BANNED = ["in today's digital landscape", "it's important to note", "dive into", "game-changer",
           "delve", "revolutionize", "seamlessly", "cutting-edge", "harness the power", "tapestry"]
 
+NO_GROUND = False  # set True when Google Search grounding is refused on this key
+BAD_SRC = {"reddit.com", "quora.com", "medium.com", "facebook.com", "linkedin.com", "pinterest.com",
+           "youtube.com", "x.com", "twitter.com", "tiktok.com", "instagram.com"}
+
 client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", ""))
 
 
@@ -63,13 +67,14 @@ def _resolve(uri):
         return uri
 
 
-def ask(system, user, max_tokens=12000, searches=0, need_json=False):
+def ask(system, user, max_tokens=12000, searches=0, need_json=False, search=True):
     """Call Gemini (free tier). Tries Google Search grounding first, then falls back to no-search.
     Returns (text, grounded, domains_seen_in_search)."""
+    global NO_GROUND
     last = None
     for model in MODELS:
-        for grounded in (True, False):
-            for attempt in range(3):
+        for grounded in ([True, False] if (search and not NO_GROUND) else [False]):
+            for attempt in range(4):
                 try:
                     cfg = types.GenerateContentConfig(
                         system_instruction=system, max_output_tokens=max_tokens, temperature=0.6,
@@ -96,12 +101,17 @@ def ask(system, user, max_tokens=12000, searches=0, need_json=False):
                                 if ch.web.uri:
                                     domains.add(host_of(_resolve(ch.web.uri)))
                     return text, bool(grounded and domains), domains
-                except Exception as e:  # rate limit, quota, unsupported tool on this model...
+                except Exception as e:  # rate limit, overload, quota, unsupported tool...
                     last = e
-                    if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                        time.sleep(25 * (attempt + 1))
+                    msg = str(e)
+                    print(f"  [gemini {model} grounded={grounded}] error: {msg[:240]}")
+                    if any(k in msg for k in ("429", "500", "503", "UNAVAILABLE", "RESOURCE_EXHAUSTED", "DEADLINE")):
+                        time.sleep(20 * (attempt + 1))  # temporary: wait and retry
                         continue
-                    break
+                    if grounded:
+                        NO_GROUND = True  # refused, not just busy: stop trying search this run
+                        print("  -> Google Search grounding unavailable on this key; using own research instead")
+                    break  # permanent for this option -> try the next one
     raise RuntimeError(f"Gemini unavailable (free quota may be used up): {last}")
 
 
@@ -179,7 +189,60 @@ Reply ONLY with:
     return extract_json(text)
 
 
-def write_article(site, topic, link_pool, feedback=None):
+def fetch_text(url):
+    try:
+        r = requests.get(url, headers=UA, timeout=20)
+        if r.status_code >= 400 or "html" not in r.headers.get("content-type", ""):
+            return ""
+        soup = BeautifulSoup(r.text, "html.parser")
+        for t in soup(["script", "style", "nav", "footer", "header", "aside", "form", "noscript"]):
+            t.decompose()
+        return " ".join(soup.get_text(" ", strip=True).split())
+    except requests.RequestException:
+        return ""
+
+
+def research_pack(site, topic, want=6):
+    """Free web research: DuckDuckGo results -> fetch the pages -> keep readable text.
+    Every URL in the pack was downloaded successfully, so it is a real, live page."""
+    try:
+        from ddgs import DDGS
+    except Exception as e:
+        print("  research: ddgs not installed:", e)
+        return []
+    queries = [topic["question"], f'{topic["primary_keyword"]} {today().year} statistics',
+               f'{topic["primary_keyword"]} guide']
+    if site.get("ymyl"):
+        sites_q = " OR ".join("site:" + d for d in site.get("trusted_domains", [])[:8])
+        queries = [f'{q} ({sites_q})' for q in queries[:2]]
+    me = host_of(site["url"])
+    found, seen_hosts = [], set()
+    for q in queries:
+        try:
+            results = DDGS().text(q, max_results=8) or []
+        except Exception as e:
+            print("  research: search error:", str(e)[:150])
+            continue
+        for r in results:
+            url = r.get("href") or r.get("url") or ""
+            h = host_of(url) if url else ""
+            if not url or h in seen_hosts or h == me or any(h == b or h.endswith("." + b) for b in BAD_SRC):
+                continue
+            if site.get("ymyl") and not any(h == t or h.endswith("." + t) for t in site.get("trusted_domains", [])):
+                continue
+            seen_hosts.add(h)
+            found.append((url, r.get("title", "")))
+    pack = []
+    for url, title in found:
+        txt = fetch_text(url)
+        if len(txt) > 600:
+            pack.append({"url": url, "title": title, "text": txt[:3000]})
+        if len(pack) >= want:
+            break
+    return pack
+
+
+def write_article(site, topic, link_pool, feedback=None, pack=None):
     ymyl_rules = ""
     if site.get("ymyl"):
         ymyl_rules = (
@@ -193,19 +256,29 @@ def write_article(site, topic, link_pool, feedback=None):
               "Never invent statistics, quotes, studies or URLs. Write like a knowledgeable human editor.")
     pool = "\n".join(f"- {p['title']}: {p['url']}" for p in link_pool[:60])
     fb = f"\n\nYOUR PREVIOUS DRAFT FAILED THESE CHECKS - FIX ALL OF THEM:\n- " + "\n- ".join(feedback) if feedback else ""
+    if pack:
+        src = "\n\n".join(f"[{i+1}] {p['title']}\nURL: {p['url']}\nEXCERPT: {p['text']}" for i, p in enumerate(pack))
+        research_block = ("SOURCE MATERIAL (downloaded today; the ONLY facts you may state as fact come from here or "
+                          "are plain common knowledge). Paraphrase in your own words, never copy sentences. "
+                          "Do not call any tools or functions.\n\n" + src)
+        ext_rule = ("EXACTLY 3 or 4 external links, each URL copied EXACTLY from the SOURCE MATERIAL list above "
+                    "(different domains). Never use any other external URL.")
+    else:
+        research_block = "Research first: search for current (2025-2026) data and authoritative sources."
+        ext_rule = "EXACTLY 3 or 4 external links to DIFFERENT authoritative domains you actually read."
     user = f"""Today is {today():%B %d, %Y}. Write one article for {site['url']}.
 Question to answer: {topic['question']}
 Primary keyword: {topic['primary_keyword']}  |  Intent: {topic['search_intent']}  |  Template: {topic['template']}
 Audience: {site['audience']}
 
-Research first: search for current (2025-2026) data and authoritative sources.
+{research_block}
 
 HARD RULES for content_html (HTML only, no <html>/<body>, no <h1>):
 1. The FIRST element must be a <p> of 40-60 words that directly answers the question (this is the AEO answer).
 2. Then a Key Takeaways box: <div class="key-takeaways"><strong>Key takeaways</strong><ul>3-5 <li></ul></div>
 3. 4-6 <h2> sections (question-style where natural), <h3> only inside them. Short paragraphs, plain language,
    at least one list or table where it helps. Minimum {site['min_words']} words.
-4. EXACTLY 3 or 4 external links to DIFFERENT authoritative domains you actually read. Plain <a href="..."> with
+4. {ext_rule} Plain <a href="..."> with
    target="_blank" rel="noopener" (dofollow: never nofollow/sponsored/ugc). Name the source in the sentence.
    Put them inside the text where the claim is made, and list them again under a final <h2>Sources</h2>.
 5. 3 or 4 internal links, chosen ONLY from this list, URL copied exactly, with descriptive anchor text:
@@ -219,9 +292,13 @@ tags (3-5), faq (same Q&A as in the HTML, as list of objects with q and a), sour
 
 Reply ONLY with:
 <json>{{"title":"","slug":"","meta_description":"","excerpt":"","tags":[],"content_html":"","faq":[{{"q":"","a":""}}],"sources":[{{"name":"","url":""}}]}}</json>"""
-    text, grounded, domains = ask(system, user, max_tokens=24000, need_json=True)
+    text, grounded, domains = ask(system, user, max_tokens=24000, need_json=True, search=not pack)
     art = extract_json(text)
     art["_grounded"], art["_domains"] = grounded, domains
+    if pack:  # self-sourced: links must be exactly the pages we downloaded
+        art["_grounded"] = True
+        art["_domains"] = {host_of(p["url"]) for p in pack}
+        art["_pack_urls"] = {norm(p["url"]) for p in pack}
     return art
 
 
@@ -281,7 +358,11 @@ def validate(site, art, internal_ok):
     for _, href in ext.values():
         if not url_alive(href):
             problems.append(f"source URL does not load: {href}")
-    if art.get("_grounded"):
+    if art.get("_pack_urls"):
+        for k, (h, href) in ext.items():
+            if k not in art["_pack_urls"]:
+                problems.append(f"external link is not one of the provided SOURCE MATERIAL urls: {href}")
+    elif art.get("_grounded"):
         seen = art["_domains"]
         for h, href in ext.values():
             if not any(h == d or h.endswith("." + d) or d.endswith(h) for d in seen):
@@ -326,9 +407,14 @@ def run_site(site, dry_run):
     topic = pick_topic(site, niche, titles, state)
     print(f"niche={niche} | question={topic['question']}")
 
+    pack = research_pack(site, topic)
+    print(f"research pack: {len(pack)} sources -> {[host_of(p['url']) for p in pack]}")
+    if len(pack) < 3:
+        pack = None  # not enough free sources: fall back to Gemini search / draft-only mode
+
     feedback, art = None, None
     for attempt in range(1, 4):
-        art = write_article(site, topic, link_pool, feedback)
+        art = write_article(site, topic, link_pool, feedback, pack)
         problems = validate(site, art, internal_ok)
         if not problems:
             break
@@ -371,6 +457,9 @@ def main():
     failed, ran = [], False
     for site in cfg["sites"]:
         if args.site and site["key"] != args.site:
+            continue
+        if not os.getenv(site["wp_user_env"]) or not os.getenv(site["wp_pass_env"]):
+            print(f"\n=== {site['key']} === SKIPPED: secrets {site['wp_user_env']} / {site['wp_pass_env']} are empty")
             continue
         try:
             if ran:
