@@ -105,11 +105,16 @@ def ask(system, user, max_tokens=12000, searches=0, need_json=False, search=True
                     last = e
                     msg = str(e)
                     print(f"  [gemini {model} grounded={grounded}] error: {msg[:240]}")
+                    quota = "429" in msg or "RESOURCE_EXHAUSTED" in msg
+                    if grounded and quota:
+                        NO_GROUND = True  # Search grounding quota is 0 / used up on this key: don't wait for it
+                        print("  -> Google Search grounding quota not available; using own research instead")
+                        break
                     if any(k in msg for k in ("429", "500", "503", "UNAVAILABLE", "RESOURCE_EXHAUSTED", "DEADLINE")):
                         time.sleep(20 * (attempt + 1))  # temporary: wait and retry
                         continue
                     if grounded:
-                        NO_GROUND = True  # refused, not just busy: stop trying search this run
+                        NO_GROUND = True
                         print("  -> Google Search grounding unavailable on this key; using own research instead")
                     break  # permanent for this option -> try the next one
     raise RuntimeError(f"Gemini unavailable (free quota may be used up): {last}")
@@ -202,41 +207,48 @@ def fetch_text(url):
         return ""
 
 
+def is_authority(site, h):
+    doms = site.get("trusted_domains", []) if site.get("ymyl") else site.get("authority_domains", [])
+    return h.endswith((".gov", ".edu", ".gov.uk", ".ac.uk", ".gov.in")) or any(h == d or h.endswith("." + d) for d in doms)
+
+
 def research_pack(site, topic, want=6):
-    """Free web research: DuckDuckGo results -> fetch the pages -> keep readable text.
+    """Free web research: DuckDuckGo -> authoritative domains first -> download pages -> keep readable text.
     Every URL in the pack was downloaded successfully, so it is a real, live page."""
     try:
         from ddgs import DDGS
     except Exception as e:
         print("  research: ddgs not installed:", e)
         return []
-    queries = [topic["question"], f'{topic["primary_keyword"]} {today().year} statistics',
-               f'{topic["primary_keyword"]} guide']
-    if site.get("ymyl"):
-        sites_q = " OR ".join("site:" + d for d in site.get("trusted_domains", [])[:8])
-        queries = [f'{q} ({sites_q})' for q in queries[:2]]
+    doms = site.get("trusted_domains", []) if site.get("ymyl") else site.get("authority_domains", [])
+    queries = []
+    for i in range(0, min(len(doms), 16), 8):  # authority-only queries first
+        queries.append(f'{topic["question"]} (' + " OR ".join("site:" + d for d in doms[i:i + 8]) + ")")
+    if not site.get("ymyl"):
+        queries += [topic["question"], f'{topic["primary_keyword"]} {today().year} statistics']
     me = host_of(site["url"])
     found, seen_hosts = [], set()
     for q in queries:
         try:
             results = DDGS().text(q, max_results=8) or []
         except Exception as e:
-            print("  research: search error:", str(e)[:150])
+            print("  research: search error:", str(e)[:120])
             continue
         for r in results:
             url = r.get("href") or r.get("url") or ""
             h = host_of(url) if url else ""
             if not url or h in seen_hosts or h == me or any(h == b or h.endswith("." + b) for b in BAD_SRC):
                 continue
-            if site.get("ymyl") and not any(h == t or h.endswith("." + t) for t in site.get("trusted_domains", [])):
+            if site.get("ymyl") and not is_authority(site, h):
                 continue
             seen_hosts.add(h)
-            found.append((url, r.get("title", "")))
+            found.append((url, r.get("title", ""), is_authority(site, h)))
+    found.sort(key=lambda x: not x[2])  # authority first
     pack = []
-    for url, title in found:
+    for url, title, auth in found:
         txt = fetch_text(url)
         if len(txt) > 600:
-            pack.append({"url": url, "title": title, "text": txt[:3000]})
+            pack.append({"url": url, "title": title, "text": txt[:3000], "authority": auth})
         if len(pack) >= want:
             break
     return pack
@@ -257,12 +269,12 @@ def write_article(site, topic, link_pool, feedback=None, pack=None):
     pool = "\n".join(f"- {p['title']}: {p['url']}" for p in link_pool[:60])
     fb = f"\n\nYOUR PREVIOUS DRAFT FAILED THESE CHECKS - FIX ALL OF THEM:\n- " + "\n- ".join(feedback) if feedback else ""
     if pack:
-        src = "\n\n".join(f"[{i+1}] {p['title']}\nURL: {p['url']}\nEXCERPT: {p['text']}" for i, p in enumerate(pack))
+        src = "\n\n".join(f"[{i+1}] {'(AUTHORITY) ' if p.get('authority') else ''}{p['title']}\nURL: {p['url']}\nEXCERPT: {p['text']}" for i, p in enumerate(pack))
         research_block = ("SOURCE MATERIAL (downloaded today; the ONLY facts you may state as fact come from here or "
                           "are plain common knowledge). Paraphrase in your own words, never copy sentences. "
                           "Do not call any tools or functions.\n\n" + src)
         ext_rule = ("EXACTLY 3 or 4 external links, each URL copied EXACTLY from the SOURCE MATERIAL list above "
-                    "(different domains). Never use any other external URL.")
+                    "(different domains), and at least 2 of them must be marked (AUTHORITY). Never use any other external URL.")
     else:
         research_block = "Research first: search for current (2025-2026) data and authoritative sources."
         ext_rule = "EXACTLY 3 or 4 external links to DIFFERENT authoritative domains you actually read."
@@ -359,6 +371,8 @@ def validate(site, art, internal_ok):
         if not url_alive(href):
             problems.append(f"source URL does not load: {href}")
     if art.get("_pack_urls"):
+        if sum(1 for h, _ in ext.values() if is_authority(site, h)) < 2:
+            problems.append("at least 2 external links must be marked (AUTHORITY) in the SOURCE MATERIAL")
         for k, (h, href) in ext.items():
             if k not in art["_pack_urls"]:
                 problems.append(f"external link is not one of the provided SOURCE MATERIAL urls: {href}")
@@ -409,8 +423,9 @@ def run_site(site, dry_run):
 
     pack = research_pack(site, topic)
     print(f"research pack: {len(pack)} sources -> {[host_of(p['url']) for p in pack]}")
-    if len(pack) < 3:
-        pack = None  # not enough free sources: fall back to Gemini search / draft-only mode
+    if len(pack) < 3 or sum(1 for p in pack if p.get("authority")) < 2:
+        print("  research: not enough authoritative sources -> this article will be DRAFT ONLY")
+        pack = None  # fall back to Gemini search / draft-only mode
 
     feedback, art = None, None
     for attempt in range(1, 4):

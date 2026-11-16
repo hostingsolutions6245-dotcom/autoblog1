@@ -16,7 +16,33 @@
         "technology": "Technology"
       },
       "avoid": "Beginner and career-oriented cybersecurity, practical marketing and fintech. Leave AI/SEO/SaaS topics to flowcharttech.com.",
-      "min_words": 900
+      "min_words": 900,
+      "authority_domains": [
+        "comptia.org",
+        "cisa.gov",
+        "nist.gov",
+        "bls.gov",
+        "grow.google",
+        "coursera.org",
+        "isc2.org",
+        "sans.org",
+        "owasp.org",
+        "ftc.gov",
+        "consumerfinance.gov",
+        "searchenginejournal.com",
+        "searchengineland.com",
+        "thinkwithgoogle.com",
+        "hubspot.com",
+        "mckinsey.com",
+        "gartner.com",
+        "ibm.com",
+        "microsoft.com",
+        "cloudflare.com",
+        "forbes.com",
+        "techcrunch.com",
+        "wired.com",
+        "nngroup.com"
+      ]
     },
     {
       "key": "flowcharttech",
@@ -35,7 +61,33 @@
         "cybersecurity for businesses": "Cybersecurity"
       },
       "avoid": "AI, SEO/AEO, SaaS and tools. Leave beginner cybersecurity careers, fintech and general marketing to techybio.com.",
-      "min_words": 900
+      "min_words": 900,
+      "authority_domains": [
+        "developers.google.com",
+        "support.google.com",
+        "searchenginejournal.com",
+        "searchengineland.com",
+        "moz.com",
+        "ahrefs.com",
+        "semrush.com",
+        "ai.google.dev",
+        "openai.com",
+        "anthropic.com",
+        "microsoft.com",
+        "aws.amazon.com",
+        "cloudflare.com",
+        "github.com",
+        "w3.org",
+        "schema.org",
+        "hubspot.com",
+        "zapier.com",
+        "gartner.com",
+        "mckinsey.com",
+        "nngroup.com",
+        "cisa.gov",
+        "nist.gov",
+        "owasp.org"
+      ]
     },
     {
       "key": "knowgrowhealth",
@@ -55,7 +107,24 @@
       },
       "avoid": "Do not repeat GLP-1 basics, gut microbiome, gut-brain, CBT vs DBT, probiotics vs prebiotics, screen time or sleep optimization overviews.",
       "min_words": 900,
-      "trusted_domains": ["nih.gov", "cdc.gov", "who.int", "mayoclinic.org", "clevelandclinic.org", "health.harvard.edu", "nature.com", "thelancet.com", "jamanetwork.com", "bmj.com", "apa.org", "nami.org", "sleepfoundation.org", "hopkinsmedicine.org", "medlineplus.gov", "fda.gov"]
+      "trusted_domains": [
+        "nih.gov",
+        "cdc.gov",
+        "who.int",
+        "mayoclinic.org",
+        "clevelandclinic.org",
+        "health.harvard.edu",
+        "nature.com",
+        "thelancet.com",
+        "jamanetwork.com",
+        "bmj.com",
+        "apa.org",
+        "nami.org",
+        "sleepfoundation.org",
+        "hopkinsmedicine.org",
+        "medlineplus.gov",
+        "fda.gov"
+      ]
     },
     {
       "key": "diycraftsnyou",
@@ -75,7 +144,31 @@
         "landscaping and gardening": "Landscaping & Gardening"
       },
       "avoid": "Home, real estate, moving and garden topics only. Never fitness, gaming or travel.",
-      "min_words": 900
+      "min_words": 900,
+      "authority_domains": [
+        "hud.gov",
+        "consumerfinance.gov",
+        "nar.realtor",
+        "redfin.com",
+        "zillow.com",
+        "nahb.org",
+        "jchs.harvard.edu",
+        "energy.gov",
+        "epa.gov",
+        "cpsc.gov",
+        "ftc.gov",
+        "fmcsa.dot.gov",
+        "thisoldhouse.com",
+        "familyhandyman.com",
+        "bobvila.com",
+        "homedepot.com",
+        "lowes.com",
+        "houzz.com",
+        "nerdwallet.com",
+        "bankrate.com",
+        "forbes.com",
+        "realtor.com"
+      ]
     }
   ]
 }
