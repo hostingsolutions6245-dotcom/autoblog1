@@ -16,6 +16,7 @@ Usage:
 """
 import argparse
 import datetime as dt
+import difflib
 import html
 import json
 import os
@@ -40,6 +41,7 @@ UA = {"User-Agent": "Mozilla/5.0 (compatible; AutoBlogBot/1.0)"}
 BANNED = ["in today's digital landscape", "it's important to note", "dive into", "game-changer",
           "delve", "revolutionize", "seamlessly", "cutting-edge", "harness the power", "tapestry"]
 
+BAD_MODELS = set()  # models that returned MALFORMED_FUNCTION_CALL this run
 NO_GROUND = False  # set True when Google Search grounding is refused on this key
 BAD_SRC = {"reddit.com", "quora.com", "medium.com", "facebook.com", "linkedin.com", "pinterest.com",
            "youtube.com", "x.com", "twitter.com", "tiktok.com", "instagram.com"}
@@ -67,7 +69,7 @@ def _resolve(uri):
         return uri
 
 
-def ask(system, user, max_tokens=12000, searches=0, need_json=False, search=True):
+def ask(system, user, max_tokens=12000, searches=0, need_json=False, search=True, check=None):
     """Call Gemini (free tier). Tries Google Search grounding first, then falls back to no-search.
     Returns (text, grounded, domains_seen_in_search)."""
     global NO_GROUND
@@ -75,6 +77,8 @@ def ask(system, user, max_tokens=12000, searches=0, need_json=False, search=True
     for model in MODELS:
         for grounded in ([True, False] if (search and not NO_GROUND) else [False]):
             for attempt in range(4):
+                if model in BAD_MODELS:
+                    break
                 try:
                     cfg = types.GenerateContentConfig(
                         system_instruction=system, max_output_tokens=max_tokens, temperature=0.6,
@@ -83,12 +87,18 @@ def ask(system, user, max_tokens=12000, searches=0, need_json=False, search=True
                     text = r.text or ""
                     fr = r.candidates[0].finish_reason if r.candidates else None
                     print(f"  [gemini {model} grounded={grounded}] finish={fr} chars={len(text)}")
-                    if need_json:
+                    if "MALFORMED" in str(fr):
+                        BAD_MODELS.add(model)
+                        last = RuntimeError(f"{model} returned MALFORMED_FUNCTION_CALL; skipping it for this run")
+                        print("  ->", last)
+                        break
+                    checker = check or (extract_json if need_json else None)
+                    if checker:
                         try:
-                            extract_json(text)
-                        except Exception:
-                            last = RuntimeError(f"{model} grounded={grounded}: no usable JSON "
-                                                f"(finish={fr}, chars={len(text)}): {text[:200]!r}")
+                            checker(text)
+                        except Exception as ce:
+                            last = RuntimeError(f"{model} grounded={grounded}: reply unusable "
+                                                f"(finish={fr}, chars={len(text)}): {ce}")
                             print("  ->", last)
                             break  # try next option (no-search / next model)
                     domains = set()
@@ -172,8 +182,8 @@ def save_state(key, state):
 
 
 # --------------------------------------------------------------------------- steps
-def pick_topic(site, niche, titles, state):
-    used = [u["question"] for u in state["used"]][-150:]
+def pick_topic(site, niche, titles, state, avoid=()):
+    used = [u["question"] for u in state["used"]][-150:] + list(avoid)
     system = ("You are a senior SEO/AEO editor. You find real questions people actually ask, "
               "then choose the one with clear search intent that the site has not covered.")
     user = f"""Today is {today():%B %d, %Y}.
@@ -222,13 +232,14 @@ def research_pack(site, topic, want=6):
         return []
     doms = site.get("trusted_domains", []) if site.get("ymyl") else site.get("authority_domains", [])
     queries = []
-    for i in range(0, min(len(doms), 16), 8):  # authority-only queries first
-        queries.append(f'{topic["question"]} (' + " OR ".join("site:" + d for d in doms[i:i + 8]) + ")")
+    for i in range(0, min(len(doms), 20), 4):  # authority-only queries first (short OR groups work better)
+        queries.append(f'{topic["question"]} (' + " OR ".join("site:" + d for d in doms[i:i + 4]) + ")")
     if not site.get("ymyl"):
         queries += [topic["question"], f'{topic["primary_keyword"]} {today().year} statistics']
     me = host_of(site["url"])
     found, seen_hosts = [], set()
     for q in queries:
+        time.sleep(1.2)
         try:
             results = DDGS().text(q, max_results=8) or []
         except Exception as e:
@@ -254,6 +265,52 @@ def research_pack(site, topic, want=6):
     return pack
 
 
+def tag(text, name):
+    m = re.search(rf"<{name}>(.*?)</{name}>", text, re.S)
+    return m.group(1).strip() if m else ""
+
+
+def parse_article(text):
+    art = {k: tag(text, k) for k in ("title", "slug", "meta_description", "excerpt", "tags")}
+    body = tag(text, "article_html")
+    body = re.sub(r"^```(?:html)?|```$", "", body, flags=re.M).strip()
+    if not body or not art["title"]:
+        raise ValueError("missing <title> or <article_html> block")
+    art["content_html"] = body
+    art["tags"] = [t.strip() for t in art["tags"].split(",") if t.strip()]
+    art["slug"] = re.sub(r"[^a-z0-9-]+", "-", (art["slug"] or art["title"]).lower()).strip("-")[:80]
+    soup = BeautifulSoup(body, "html.parser")
+    faq = []
+    h2 = next((h for h in soup.find_all("h2") if "frequently asked" in h.get_text().lower()), None)
+    if h2:
+        for el in h2.find_next_siblings():
+            if el.name == "h2":
+                break
+            if el.name == "h3":
+                p = el.find_next_sibling("p")
+                if p:
+                    faq.append({"q": el.get_text(" ", strip=True), "a": p.get_text(" ", strip=True)})
+    art["faq"] = faq
+    return art
+
+
+def fix_internal_links(site, html_, allowed_map):
+    """Models sometimes mangle our own URLs. Snap each internal link to the closest real URL, or drop it."""
+    soup = BeautifulSoup(html_, "html.parser")
+    me, keys = host_of(site["url"]), sorted(allowed_map)
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        if href.startswith("http") and host_of(href) == me and norm(href) not in allowed_map:
+            m = difflib.get_close_matches(norm(href), keys, n=1, cutoff=0.6)
+            if m:
+                print(f"  fixed internal link {href} -> {allowed_map[m[0]]}")
+                a["href"] = allowed_map[m[0]]
+            else:
+                print(f"  dropped unknown internal link {href}")
+                a.unwrap()
+    return str(soup)
+
+
 def write_article(site, topic, link_pool, feedback=None, pack=None):
     ymyl_rules = ""
     if site.get("ymyl"):
@@ -274,7 +331,7 @@ def write_article(site, topic, link_pool, feedback=None, pack=None):
                           "are plain common knowledge). Paraphrase in your own words, never copy sentences. "
                           "Do not call any tools or functions.\n\n" + src)
         ext_rule = ("EXACTLY 3 or 4 external links, each URL copied EXACTLY from the SOURCE MATERIAL list above "
-                    "(different domains), and at least 2 of them must be marked (AUTHORITY). Never use any other external URL.")
+                    "(different domains), and at least one must be marked (AUTHORITY), preferably two. Never use any other external URL.")
     else:
         research_block = "Research first: search for current (2025-2026) data and authoritative sources."
         ext_rule = "EXACTLY 3 or 4 external links to DIFFERENT authoritative domains you actually read."
@@ -299,18 +356,23 @@ HARD RULES for content_html (HTML only, no <html>/<body>, no <h1>):
 7. Add original value: a concrete example, a decision rule, or a common mistake - not just a summary of sources.
 8. Do not use these phrases: {', '.join(BANNED)}.{ymyl_rules}
 
-Also return: title (<=60 chars, includes keyword), slug, meta_description (<=155 chars), excerpt (1-2 sentences),
-tags (3-5), faq (same Q&A as in the HTML, as list of objects with q and a), sources (name + url for each external link).{fb}
-
-Reply ONLY with:
-<json>{{"title":"","slug":"","meta_description":"","excerpt":"","tags":[],"content_html":"","faq":[{{"q":"","a":""}}],"sources":[{{"name":"","url":""}}]}}</json>"""
-    text, grounded, domains = ask(system, user, max_tokens=24000, need_json=True, search=not pack)
-    art = extract_json(text)
+Reply ONLY in this exact tag format (HTML goes directly inside <article_html>; no JSON, no markdown fences):
+<title>title, max 60 chars, includes the keyword</title>
+<slug>url-slug</slug>
+<meta_description>max 155 chars</meta_description>
+<excerpt>1-2 sentences</excerpt>
+<tags>3-5 comma-separated tags</tags>
+<article_html>
+...the full article HTML...
+</article_html>{fb}"""
+    text, grounded, domains = ask(system, user, max_tokens=24000, check=parse_article, search=not pack)
+    art = parse_article(text)
     art["_grounded"], art["_domains"] = grounded, domains
     if pack:  # self-sourced: links must be exactly the pages we downloaded
         art["_grounded"] = True
         art["_domains"] = {host_of(p["url"]) for p in pack}
         art["_pack_urls"] = {norm(p["url"]) for p in pack}
+        art["_min_auth"] = min(2, sum(1 for p in pack if p.get("authority")))
     return art
 
 
@@ -371,8 +433,9 @@ def validate(site, art, internal_ok):
         if not url_alive(href):
             problems.append(f"source URL does not load: {href}")
     if art.get("_pack_urls"):
-        if sum(1 for h, _ in ext.values() if is_authority(site, h)) < 2:
-            problems.append("at least 2 external links must be marked (AUTHORITY) in the SOURCE MATERIAL")
+        need = art.get("_min_auth", 2)
+        if sum(1 for h, _ in ext.values() if is_authority(site, h)) < need:
+            problems.append(f"at least {need} external links must be marked (AUTHORITY) in the SOURCE MATERIAL")
         for k, (h, href) in ext.items():
             if k not in art["_pack_urls"]:
                 problems.append(f"external link is not one of the provided SOURCE MATERIAL urls: {href}")
@@ -417,19 +480,30 @@ def run_site(site, dry_run):
     titles = [p["title"] for p in posts]
     link_pool = posts + (category_links(site) if posts else [])
     internal_ok = {norm(p["url"]) for p in link_pool} | {norm(site["url"])}
-    # prefer topically recent posts but always allow category pages
-    topic = pick_topic(site, niche, titles, state)
-    print(f"niche={niche} | question={topic['question']}")
+    allowed_map = {norm(p["url"]): p["url"] for p in link_pool}
+    allowed_map[norm(site["url"])] = site["url"]
 
-    pack = research_pack(site, topic)
-    print(f"research pack: {len(pack)} sources -> {[host_of(p['url']) for p in pack]}")
-    if len(pack) < 3 or sum(1 for p in pack if p.get("authority")) < 2:
-        print("  research: not enough authoritative sources -> this article will be DRAFT ONLY")
-        pack = None  # fall back to Gemini search / draft-only mode
+    tried, pack, topic = [], None, None
+    for _ in range(3):
+        topic = pick_topic(site, niche, titles, state, avoid=tried)
+        print(f"niche={niche} | question={topic['question']}")
+        pk = research_pack(site, topic)
+        auth_n = sum(1 for p in pk if p.get("authority"))
+        print(f"research pack: {len(pk)} sources ({auth_n} authoritative) -> {[host_of(p['url']) for p in pk]}")
+        if len(pk) >= 3 and auth_n >= 1:
+            pack = pk
+            break
+        tried.append(topic["question"])
+        if not NO_GROUND:
+            break  # Gemini's own Google Search can source this topic
+        print("  research: not enough real sources for this question, trying another one")
+    else:
+        raise RuntimeError(f"{key}: no verifiable sources found for 3 different questions; nothing was written")
 
     feedback, art = None, None
     for attempt in range(1, 4):
         art = write_article(site, topic, link_pool, feedback, pack)
+        art["content_html"] = fix_internal_links(site, art["content_html"], allowed_map)
         problems = validate(site, art, internal_ok)
         if not problems:
             break
