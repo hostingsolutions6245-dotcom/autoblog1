@@ -271,7 +271,7 @@ def tag(text, name):
 
 
 def parse_article(text):
-    art = {k: tag(text, k) for k in ("title", "slug", "meta_description", "excerpt", "tags")}
+    art = {k: tag(text, k) for k in ("title", "slug", "meta_description", "excerpt", "tags", "image_query")}
     body = tag(text, "article_html")
     body = re.sub(r"^```(?:html)?|```$", "", body, flags=re.M).strip()
     if not body or not art["title"]:
@@ -362,6 +362,7 @@ Reply ONLY in this exact tag format (HTML goes directly inside <article_html>; n
 <meta_description>max 155 chars</meta_description>
 <excerpt>1-2 sentences</excerpt>
 <tags>3-5 comma-separated tags</tags>
+<image_query>2-4 plain words describing a concrete, photographable scene for the featured image (e.g. 'woman typing laptop office'); no brands, no text, no logos</image_query>
 <article_html>
 ...the full article HTML...
 </article_html>{fb}"""
@@ -468,6 +469,95 @@ def schema_block(site, art, url_hint):
     return "\n".join(f'<script type="application/ld+json">{json.dumps(g, ensure_ascii=False)}</script>' for g in graph)
 
 
+# --------------------------------------------------------------------------- images
+def find_images(queries, used_ids, n=2, keyword=""):
+    """Free stock photos from Pexels (needs PEXELS_API_KEY). Returns up to n different photos."""
+    key = os.getenv("PEXELS_API_KEY")
+    if not key:
+        print("  image: PEXELS_API_KEY not set, posting without images")
+        return []
+    out, seen = [], set(used_ids)
+    for q in [q for q in queries if q]:
+        if len(out) >= n:
+            break
+        try:
+            r = requests.get("https://api.pexels.com/v1/search", timeout=30, headers={"Authorization": key, **UA},
+                             params={"query": q, "per_page": 15, "orientation": "landscape", "size": "large"})
+            r.raise_for_status()
+            for p in r.json().get("photos", []):
+                if p["id"] in seen or p.get("width", 0) < 1600:
+                    continue
+                seen.add(p["id"])
+                alt = (p.get("alt") or "").strip() or f"{q} - {keyword}".strip(" -")
+                out.append({"id": p["id"], "url": p["src"]["large2x"], "photographer": p["photographer"],
+                            "page": p["url"], "alt": alt[:125], "query": q})
+                if len(out) >= n:
+                    break
+        except Exception as e:
+            print("  image search error:", str(e)[:150])
+    return out
+
+
+def credit_html(img):
+    return (f'Photo by <a href="{img["page"]}" target="_blank" rel="noopener">{html.escape(img["photographer"])}</a>'
+            ' on <a href="https://www.pexels.com" target="_blank" rel="noopener">Pexels</a>')
+
+
+def upload_image(site, img, slug):
+    """Upload to the WordPress media library with alt text, title and credit caption."""
+    data = requests.get(img["url"], headers=UA, timeout=90).content
+    auth = (os.environ[site["wp_user_env"]], os.environ[site["wp_pass_env"]])
+    r = requests.post(site["url"].rstrip("/") + "/wp-json/wp/v2/media", auth=auth, timeout=180, data=data,
+                      headers={**UA, "Content-Disposition": f'attachment; filename="{slug}.jpg"',
+                               "Content-Type": "image/jpeg"})
+    r.raise_for_status()
+    j = r.json()
+    wp(site, "POST", f"media/{j['id']}", json={"alt_text": img["alt"], "title": img["alt"],
+                                              "caption": credit_html(img), "description": img["alt"]})
+    md = j.get("media_details") or {}
+    return {"id": j["id"], "url": j.get("source_url") or img["url"], "w": md.get("width"), "h": md.get("height")}
+
+
+def figure_html(src, img, w=None, h=None):
+    size = f' width="{w}" height="{h}"' if w and h else ""
+    return (f'<figure class="wp-block-image size-large"><img src="{src}" alt="{html.escape(img["alt"], quote=True)}"'
+            f'{size} loading="lazy" /><figcaption>{credit_html(img)}</figcaption></figure>')
+
+
+def insert_figure(html_, fig):
+    """Put the image after the first section (before the 2nd <h2>); the answer paragraph stays first."""
+    soup = BeautifulSoup(html_, "html.parser")
+    node = BeautifulSoup(fig, "html.parser")
+    h2s = soup.find_all("h2")
+    if len(h2s) >= 2:
+        h2s[1].insert_before(node)
+    else:
+        p = soup.find("p")
+        (p.insert_after(node) if p else soup.append(node))
+    return str(soup)
+
+
+def tag_ids(site, names):
+    ids = []
+    for n in names[:5]:
+        n = n.strip()[:40]
+        if not n:
+            continue
+        try:
+            found = wp(site, "GET", "tags", params={"search": n, "per_page": 20, "_fields": "id,name"})
+            tid = next((t["id"] for t in found if html.unescape(t["name"]).lower() == n.lower()), None)
+            if tid is None:
+                try:
+                    tid = wp(site, "POST", "tags", json={"name": n})["id"]
+                except requests.HTTPError as e:  # tag already exists -> WordPress returns its id
+                    tid = ((e.response.json() if e.response is not None else {}).get("data") or {}).get("term_id")
+            if tid:
+                ids.append(tid)
+        except Exception as e:
+            print(f"  tag '{n}' skipped:", str(e)[:120])
+    return ids
+
+
 # --------------------------------------------------------------------------- per-site run
 def run_site(site, dry_run):
     key = site["key"]
@@ -512,10 +602,31 @@ def run_site(site, dry_run):
     else:
         raise RuntimeError(f"{key}: article failed validation after 3 attempts: {problems}")
 
-    content = art["content_html"] + "\n" + schema_block(site, art, site["url"])
+    want = 2 if site.get("inline_image", True) else 1
+    imgs = find_images([art.get("image_query"), topic["primary_keyword"], niche], set(state.get("images", [])),
+                       n=want, keyword=topic["primary_keyword"])
+    print(f"  images found: {[i['url'] for i in imgs] or 'none'}")
+    featured, inline = (imgs + [None, None])[:2]
+    uploaded = {}
+    if not dry_run:  # upload now so the in-article image uses your own media-library URL
+        for name, im in (("featured", featured), ("inline", inline)):
+            if im:
+                try:
+                    uploaded[name] = upload_image(site, im, f"{art['slug']}-{name}")
+                    state.setdefault("images", []).append(im["id"])
+                except Exception as e:
+                    print(f"  {name} image upload failed:", str(e)[:200])
+    body = art["content_html"]
+    if inline:
+        u = uploaded.get("inline")
+        if u or dry_run:
+            body = insert_figure(body, figure_html(u["url"] if u else inline["url"], inline,
+                                                   u["w"] if u else None, u["h"] if u else None))
+    content = body + "\n" + schema_block(site, art, site["url"])
     OUT_DIR.mkdir(exist_ok=True)
     out_file = OUT_DIR / f"{today():%Y-%m-%d}-{key}-{art['slug']}.html"
-    out_file.write_text(f"<!-- {art['title']} | {art['meta_description']} -->\n{content}")
+    out_file.write_text(f"<!-- {art['title']} | {art['meta_description']} | tags: {', '.join(art['tags'])} | "
+                        f"featured image: {featured['url'] if featured else 'none'} -->\n{content}")
 
     if dry_run:
         print(f"DRY RUN saved {out_file}")
@@ -530,6 +641,11 @@ def run_site(site, dry_run):
     cid = category_id(site, cat_name)
     if cid:
         payload["categories"] = [cid]
+    if "featured" in uploaded:
+        payload["featured_media"] = uploaded["featured"]["id"]
+    tids = tag_ids(site, art["tags"] or [topic["primary_keyword"]])
+    if tids:
+        payload["tags"] = tids
     res = wp(site, "POST", "posts", json=payload)
     print(f"{status.upper()} -> {res.get('link')}")
     state["used"].append({"date": today().isoformat(), "question": topic["question"],
