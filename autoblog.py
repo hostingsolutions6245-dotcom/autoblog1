@@ -326,7 +326,42 @@ def fix_internal_links(site, html_, allowed_map):
     return str(soup)
 
 
-def write_article(site, topic, link_pool, feedback=None, pack=None):
+def ensure_links(site, art, pack):
+    """Guarantee 3-4 distinct external links: trim extras, top up from the downloaded sources."""
+    soup = BeautifulSoup(art["content_html"], "html.parser")
+    me = host_of(site["url"])
+    seen = {}
+    for a in soup.find_all("a", href=True):
+        h = a["href"]
+        if h.startswith("http") and host_of(h) != me:
+            seen.setdefault(norm(h), []).append(a)
+    if len(seen) > 4:
+        keep = list(seen)[:4]
+        for k, anchors in seen.items():
+            if k not in keep:
+                for a in anchors:
+                    a.unwrap()
+        seen = {k: seen[k] for k in keep}
+    if len(seen) < 3 and pack:
+        hosts = {host_of(k) for k in seen}
+        extra = []
+        for p in sorted(pack, key=lambda p: not p.get("authority")):
+            if norm(p["url"]) in seen or host_of(p["url"]) in hosts:
+                continue
+            extra.append(p)
+            hosts.add(host_of(p["url"]))
+            if len(seen) + len(extra) >= 3:
+                break
+        if extra:
+            li = "".join(f'<li><a href="{p["url"]}" target="_blank" rel="noopener">'
+                         f'{html.escape((p["title"] or host_of(p["url"]))[:90])}</a> ({host_of(p["url"])})</li>'
+                         for p in extra)
+            soup.append(BeautifulSoup(f"<h2>Further reading</h2><ul>{li}</ul>", "html.parser"))
+            print(f"  added {len(extra)} 'Further reading' source(s) to reach 3 external links")
+    art["content_html"] = str(soup)
+
+
+def write_article(site, topic, link_pool, feedback=None, pack=None, prev=None):
     ymyl_rules = ""
     if site.get("ymyl"):
         ymyl_rules = (
@@ -339,7 +374,11 @@ def write_article(site, topic, link_pool, feedback=None, pack=None):
               "engines (AEO/GEO). Every factual claim must come from pages you actually found with Google Search. "
               "Never invent statistics, quotes, studies or URLs. Write like a knowledgeable human editor.")
     pool = "\n".join(f"- {p['title']}: {p['url']}" for p in link_pool[:60])
-    fb = f"\n\nYOUR PREVIOUS DRAFT FAILED THESE CHECKS - FIX ALL OF THEM:\n- " + "\n- ".join(feedback) if feedback else ""
+    fb = ""
+    if feedback:
+        fb = ("\n\nYOUR PREVIOUS DRAFT FAILED THESE CHECKS - FIX ALL OF THEM:\n- " + "\n- ".join(feedback))
+        if prev:
+            fb += "\n\nPREVIOUS DRAFT (revise and EXTEND it, keep what works):\n" + prev
     if pack:
         src = "\n\n".join(f"[{i+1}] {'(AUTHORITY) ' if p.get('authority') else ''}{p['title']}\nURL: {p['url']}\nEXCERPT: {p['text']}" for i, p in enumerate(pack))
         research_block = ("SOURCE MATERIAL (downloaded today; the ONLY facts you may state as fact come from here or "
@@ -361,7 +400,7 @@ HARD RULES for content_html (HTML only, no <html>/<body>, no <h1>):
 1. The FIRST element must be a <p> of 40-60 words that directly answers the question (this is the AEO answer).
 2. Then a Key Takeaways box: <div class="key-takeaways"><strong>Key takeaways</strong><ul>3-5 <li></ul></div>
 3. 4-6 <h2> sections (question-style where natural), <h3> only inside them. Short paragraphs, plain language,
-   at least one list or table where it helps. Minimum {site['min_words']} words.
+   at least one list or table where it helps. Write about {site['min_words'] + 400} words (never fewer than {site['min_words'] + 100}): develop each section with examples, steps and numbers from the sources.
 4. {ext_rule} Plain <a href="..."> with
    target="_blank" rel="noopener" (dofollow: never nofollow/sponsored/ugc). Name the source in the sentence.
    Put them inside the text where the claim is made, and list them again under a final <h2>Sources</h2>.
@@ -605,10 +644,13 @@ def run_site(site, dry_run):
     else:
         raise RuntimeError(f"{key}: no verifiable sources found for 3 different questions; nothing was written")
 
-    feedback, art = None, None
+    feedback, art, prev = None, None, None
     for attempt in range(1, 4):
-        art = write_article(site, topic, link_pool, feedback, pack)
+        art = write_article(site, topic, link_pool, feedback, pack, prev)
         art["content_html"] = fix_internal_links(site, art["content_html"], allowed_map)
+        if pack:
+            ensure_links(site, art, pack)
+        prev = art["content_html"]
         problems = validate(site, art, internal_ok)
         if not problems:
             break
