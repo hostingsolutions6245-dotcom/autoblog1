@@ -41,6 +41,7 @@ UA = {"User-Agent": "Mozilla/5.0 (compatible; AutoBlogBot/1.0)"}
 BANNED = ["in today's digital landscape", "it's important to note", "dive into", "game-changer",
           "delve", "revolutionize", "seamlessly", "cutting-edge", "harness the power", "tapestry"]
 
+OVERLOADED = set()  # models returning 503 'high demand' this run
 BAD_MODELS = set()  # models that returned MALFORMED_FUNCTION_CALL this run
 NO_GROUND = False  # set True when Google Search grounding is refused on this key
 BAD_SRC = {"reddit.com", "quora.com", "medium.com", "facebook.com", "linkedin.com", "pinterest.com",
@@ -77,7 +78,7 @@ def ask(system, user, max_tokens=12000, searches=0, need_json=False, search=True
     for model in MODELS:
         for grounded in ([True, False] if (search and not NO_GROUND) else [False]):
             for attempt in range(4):
-                if model in BAD_MODELS:
+                if model in BAD_MODELS or model in OVERLOADED:
                     break
                 try:
                     cfg = types.GenerateContentConfig(
@@ -120,7 +121,14 @@ def ask(system, user, max_tokens=12000, searches=0, need_json=False, search=True
                         NO_GROUND = True  # Search grounding quota is 0 / used up on this key: don't wait for it
                         print("  -> Google Search grounding quota not available; using own research instead")
                         break
-                    if any(k in msg for k in ("429", "500", "503", "UNAVAILABLE", "RESOURCE_EXHAUSTED", "DEADLINE")):
+                    if "503" in msg or "UNAVAILABLE" in msg:
+                        if attempt >= 1:  # still busy after 2 tries: use the other model for the rest of this run
+                            OVERLOADED.add(model)
+                            print(f"  -> {model} is overloaded; switching models for the rest of this run")
+                            break
+                        time.sleep(15)
+                        continue
+                    if any(k in msg for k in ("429", "500", "RESOURCE_EXHAUSTED", "DEADLINE")):
                         time.sleep(20 * (attempt + 1))  # temporary: wait and retry
                         continue
                     if grounded:
@@ -217,12 +225,19 @@ def fetch_text(url):
         return ""
 
 
+def auth_domains(site):
+    if site.get("ymyl"):
+        return set(site.get("trusted_domains", []))
+    extra = [d for lst in site.get("niche_authority", {}).values() for d in lst]
+    return set(site.get("authority_domains", [])) | set(extra)
+
+
 def is_authority(site, h):
-    doms = site.get("trusted_domains", []) if site.get("ymyl") else site.get("authority_domains", [])
-    return h.endswith((".gov", ".edu", ".gov.uk", ".ac.uk", ".gov.in")) or any(h == d or h.endswith("." + d) for d in doms)
+    return h.endswith((".gov", ".edu", ".gov.uk", ".ac.uk", ".gov.in")) or any(
+        h == d or h.endswith("." + d) for d in auth_domains(site))
 
 
-def research_pack(site, topic, want=6):
+def research_pack(site, topic, want=6, niche=None):
     """Free web research: DuckDuckGo -> authoritative domains first -> download pages -> keep readable text.
     Every URL in the pack was downloaded successfully, so it is a real, live page."""
     try:
@@ -230,10 +245,10 @@ def research_pack(site, topic, want=6):
     except Exception as e:
         print("  research: ddgs not installed:", e)
         return []
-    doms = site.get("trusted_domains", []) if site.get("ymyl") else site.get("authority_domains", [])
-    queries = []
-    for i in range(0, min(len(doms), 20), 4):  # authority-only queries first (short OR groups work better)
-        queries.append(f'{topic["question"]} (' + " OR ".join("site:" + d for d in doms[i:i + 4]) + ")")
+    base = site.get("trusted_domains", []) if site.get("ymyl") else site.get("authority_domains", [])
+    lead = (site.get("niche_authority", {}).get(niche or "", []) or base)[:9]  # best domains for TODAY's niche
+    queries = [f'{topic["question"]} (' + " OR ".join("site:" + d for d in lead[i:i + 3]) + ")"
+               for i in range(0, len(lead), 3)]
     if not site.get("ymyl"):
         queries += [topic["question"], f'{topic["primary_keyword"]} {today().year} statistics']
     me = host_of(site["url"])
@@ -574,13 +589,13 @@ def run_site(site, dry_run):
     allowed_map[norm(site["url"])] = site["url"]
 
     tried, pack, topic = [], None, None
-    for _ in range(3):
+    for i in range(3):
         topic = pick_topic(site, niche, titles, state, avoid=tried)
         print(f"niche={niche} | question={topic['question']}")
-        pk = research_pack(site, topic)
+        pk = research_pack(site, topic, niche=niche)
         auth_n = sum(1 for p in pk if p.get("authority"))
         print(f"research pack: {len(pk)} sources ({auth_n} authoritative) -> {[host_of(p['url']) for p in pk]}")
-        if len(pk) >= 3 and auth_n >= 1:
+        if len(pk) >= 3 and auth_n >= (2 if i < 2 else 1):  # last try accepts a single authority source
             pack = pk
             break
         tried.append(topic["question"])

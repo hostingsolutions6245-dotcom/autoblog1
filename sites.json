@@ -42,7 +42,53 @@
         "techcrunch.com",
         "wired.com",
         "nngroup.com"
-      ]
+      ],
+      "niche_authority": {
+        "cybersecurity": [
+          "comptia.org",
+          "cisa.gov",
+          "nist.gov",
+          "bls.gov",
+          "sans.org",
+          "isc2.org",
+          "owasp.org",
+          "ftc.gov",
+          "coursera.org"
+        ],
+        "marketing": [
+          "sba.gov",
+          "hubspot.com",
+          "thinkwithgoogle.com",
+          "searchenginejournal.com",
+          "searchengineland.com",
+          "contentmarketinginstitute.com",
+          "mailchimp.com",
+          "ftc.gov",
+          "census.gov"
+        ],
+        "fintech": [
+          "consumerfinance.gov",
+          "federalreserve.gov",
+          "sec.gov",
+          "fdic.gov",
+          "irs.gov",
+          "investopedia.com",
+          "nerdwallet.com",
+          "stripe.com",
+          "mckinsey.com"
+        ],
+        "technology": [
+          "nist.gov",
+          "microsoft.com",
+          "ibm.com",
+          "cloudflare.com",
+          "wired.com",
+          "techcrunch.com",
+          "mckinsey.com",
+          "gartner.com",
+          "ieee.org"
+        ]
+      }
     },
     {
       "key": "flowcharttech",
@@ -87,7 +133,64 @@
         "cisa.gov",
         "nist.gov",
         "owasp.org"
-      ]
+      ],
+      "niche_authority": {
+        "ai": [
+          "ai.google.dev",
+          "openai.com",
+          "anthropic.com",
+          "microsoft.com",
+          "nist.gov",
+          "mckinsey.com",
+          "gartner.com",
+          "aws.amazon.com",
+          "ibm.com"
+        ],
+        "seo and aeo": [
+          "developers.google.com",
+          "support.google.com",
+          "searchenginejournal.com",
+          "searchengineland.com",
+          "moz.com",
+          "ahrefs.com",
+          "semrush.com",
+          "schema.org",
+          "w3.org"
+        ],
+        "saas": [
+          "hubspot.com",
+          "zapier.com",
+          "gartner.com",
+          "mckinsey.com",
+          "aws.amazon.com",
+          "stripe.com",
+          "atlassian.com",
+          "salesforce.com",
+          "cloudflare.com"
+        ],
+        "tech tools": [
+          "zapier.com",
+          "microsoft.com",
+          "github.com",
+          "cloudflare.com",
+          "aws.amazon.com",
+          "w3.org",
+          "nist.gov",
+          "gartner.com",
+          "hubspot.com"
+        ],
+        "cybersecurity for businesses": [
+          "cisa.gov",
+          "nist.gov",
+          "ftc.gov",
+          "sba.gov",
+          "owasp.org",
+          "sans.org",
+          "microsoft.com",
+          "cloudflare.com",
+          "ibm.com"
+        ]
+      }
     },
     {
       "key": "knowgrowhealth",
@@ -168,7 +271,75 @@
         "bankrate.com",
         "forbes.com",
         "realtor.com"
-      ]
+      ],
+      "niche_authority": {
+        "home improvement": [
+          "energy.gov",
+          "epa.gov",
+          "cpsc.gov",
+          "hud.gov",
+          "thisoldhouse.com",
+          "familyhandyman.com",
+          "bobvila.com",
+          "homedepot.com",
+          "lowes.com"
+        ],
+        "kitchen and flooring": [
+          "energy.gov",
+          "nkba.org",
+          "thisoldhouse.com",
+          "familyhandyman.com",
+          "bobvila.com",
+          "homedepot.com",
+          "lowes.com",
+          "houzz.com",
+          "consumerreports.org"
+        ],
+        "real estate": [
+          "hud.gov",
+          "consumerfinance.gov",
+          "nar.realtor",
+          "redfin.com",
+          "zillow.com",
+          "realtor.com",
+          "nerdwallet.com",
+          "bankrate.com",
+          "jchs.harvard.edu"
+        ],
+        "packing and moving": [
+          "fmcsa.dot.gov",
+          "ftc.gov",
+          "usps.com",
+          "consumerreports.org",
+          "redfin.com",
+          "thisoldhouse.com",
+          "uhaul.com",
+          "nerdwallet.com",
+          "realtor.com"
+        ],
+        "decor and design": [
+          "houzz.com",
+          "thisoldhouse.com",
+          "bhg.com",
+          "architecturaldigest.com",
+          "apartmenttherapy.com",
+          "familyhandyman.com",
+          "bobvila.com",
+          "homedepot.com",
+          "lowes.com"
+        ],
+        "landscaping and gardening": [
+          "usda.gov",
+          "epa.gov",
+          "almanac.com",
+          "gardeners.com",
+          "bhg.com",
+          "thisoldhouse.com",
+          "bobvila.com",
+          "lowes.com",
+          "homedepot.com"
+        ]
+      }
     }
   ]
 }
