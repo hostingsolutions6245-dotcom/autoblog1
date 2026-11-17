@@ -28,6 +28,7 @@ jobs:
       - name: Write today's posts
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           WP_TECHYBIO_USER: ${{ secrets.WP_TECHYBIO_USER }}
           WP_TECHYBIO_PASS: ${{ secrets.WP_TECHYBIO_PASS }}
           WP_FLOWCHARTTECH_USER: ${{ secrets.WP_FLOWCHARTTECH_USER }}
