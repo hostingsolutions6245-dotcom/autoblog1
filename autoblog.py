@@ -59,6 +59,13 @@ def host_of(url):
     return urlparse(url).netloc.lower().replace("www.", "")
 
 
+def root_domain(h):
+    p = h.split(".")
+    if len(p) >= 3 and ".".join(p[-2:]) in ("co.uk", "org.uk", "gov.uk", "ac.uk", "com.au", "co.in", "gov.in", "com.br"):
+        return ".".join(p[-3:])
+    return ".".join(p[-2:])
+
+
 def norm(url):
     return url.split("#")[0].rstrip("/").lower()
 
@@ -263,11 +270,11 @@ def research_pack(site, topic, want=6, niche=None):
         for r in results:
             url = r.get("href") or r.get("url") or ""
             h = host_of(url) if url else ""
-            if not url or h in seen_hosts or h == me or any(h == b or h.endswith("." + b) for b in BAD_SRC):
+            if not url or root_domain(h) in seen_hosts or root_domain(h) == root_domain(me) or any(h == b or h.endswith("." + b) for b in BAD_SRC):
                 continue
             if site.get("ymyl") and not is_authority(site, h):
                 continue
-            seen_hosts.add(h)
+            seen_hosts.add(root_domain(h))
             found.append((url, r.get("title", ""), is_authority(site, h)))
     found.sort(key=lambda x: not x[2])  # authority first
     pack = []
@@ -343,13 +350,13 @@ def ensure_links(site, art, pack):
                     a.unwrap()
         seen = {k: seen[k] for k in keep}
     if len(seen) < 3 and pack:
-        hosts = {host_of(k) for k in seen}
+        hosts = {root_domain(host_of(k)) for k in seen}
         extra = []
         for p in sorted(pack, key=lambda p: not p.get("authority")):
-            if norm(p["url"]) in seen or host_of(p["url"]) in hosts:
+            if norm(p["url"]) in seen or root_domain(host_of(p["url"])) in hosts:
                 continue
             extra.append(p)
-            hosts.add(host_of(p["url"]))
+            hosts.add(root_domain(host_of(p["url"])))
             if len(seen) + len(extra) >= 3:
                 break
         if extra:
@@ -477,7 +484,7 @@ def validate(site, art, internal_ok):
             ext[norm(href)] = (h, href)
     if not 3 <= len(ext) <= 4:
         problems.append(f"need 3-4 distinct external links, found {len(ext)}")
-    if len({h for h, _ in ext.values()}) < len(ext):
+    if len({root_domain(h) for h, _ in ext.values()}) < len(ext):
         problems.append("external links must go to different domains")
     if len(internal) < 2:
         problems.append("need at least 2 internal links")
