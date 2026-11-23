@@ -47,6 +47,12 @@
       "question": "What is embedded finance and how does it work?",
       "title": "What Is Embedded Finance and How Does It Work?",
       "url": "https://techybio.com/what-is-embedded-finance/"
+    },
+    {
+      "date": "2026-11-23",
+      "question": "What is SOC 2 compliance and does your small business need it?",
+      "title": "SOC 2 Compliance for Small Business: Guide &amp; Requirements",
+      "url": "https://techybio.com/soc-2-compliance-for-small-business/"
     }
   ],
   "images": [
@@ -59,6 +65,8 @@
     40468541,
     40468542,
     16195434,
-    5829932
+    5829932,
+    7698748,
+    7888684
   ]
 }
