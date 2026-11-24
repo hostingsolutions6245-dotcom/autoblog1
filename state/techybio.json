@@ -53,6 +53,12 @@
       "question": "What is SOC 2 compliance and does your small business need it?",
       "title": "SOC 2 Compliance for Small Business: Guide &amp; Requirements",
       "url": "https://techybio.com/soc-2-compliance-for-small-business/"
+    },
+    {
+      "date": "2026-11-24",
+      "question": "What is zero trust security and how does it work for small businesses?",
+      "title": "Zero Trust Security for Small Business: Plain-English Guide",
+      "url": "https://techybio.com/zero-trust-security-for-small-business/"
     }
   ],
   "images": [
@@ -67,6 +73,8 @@
     16195434,
     5829932,
     7698748,
-    7888684
+    7888684,
+    7212946,
+    6326260
   ]
 }
