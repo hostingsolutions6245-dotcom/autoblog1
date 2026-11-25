@@ -59,6 +59,12 @@
       "question": "What is zero trust security and how does it work for small businesses?",
       "title": "Zero Trust Security for Small Business: Plain-English Guide",
       "url": "https://techybio.com/zero-trust-security-for-small-business/"
+    },
+    {
+      "date": "2026-11-25",
+      "question": "How do you set up a customer referral program for a small business?",
+      "title": "Customer Referral Program for Small Business Setup Guide",
+      "url": "https://techybio.com/customer-referral-program-for-small-business/"
     }
   ],
   "images": [
@@ -75,6 +81,8 @@
     7698748,
     7888684,
     7212946,
-    6326260
+    6326260,
+    6545444,
+    12935085
   ]
 }
