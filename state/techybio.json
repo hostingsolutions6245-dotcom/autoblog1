@@ -77,6 +77,12 @@
       "question": "SMS marketing vs email marketing: Which is better for small businesses?",
       "title": "SMS Marketing vs Email Marketing: Which Is Better for Business?",
       "url": "https://techybio.com/sms-marketing-vs-email-marketing-small-business/"
+    },
+    {
+      "date": "2026-11-28",
+      "question": "What is EDR and how does it differ from traditional antivirus?",
+      "title": "EDR vs Antivirus: What Is EDR and How Does It Work?",
+      "url": "https://techybio.com/edr-vs-antivirus/"
     }
   ],
   "images": [
@@ -99,6 +105,8 @@
     10376251,
     7821708,
     5717682,
-    7693219
+    7693219,
+    5380582,
+    5380586
   ]
 }
